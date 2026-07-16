@@ -1,9 +1,14 @@
 <?php
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: POST, GET, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type");
+header("Access-Control-Allow-Methods: POST, GET, PUT, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With");
 
-// Menghubungkan ke Environment Variables Database bawaan Railway
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit();
+}
+
+// Menghubungkan ke Environment Variables Database bawaan Railway (Bebas Spasi Gaib)
 $host = getenv('MYSQLHOST') ?: 'localhost';
 $user = getenv('MYSQLUSER') ?: 'root';
 $pass = getenv('MYSQLPASSWORD') ?: '';
@@ -16,29 +21,49 @@ if ($conn->connect_error) {
     die(json_encode(["pass" => "koneksi_db_gagal"]));
 }
 
-// Tangkap kiriman data dari Google Apps Script
-$action   = $_POST['action'] ?? '';
-$username = $_POST['username'] ?? $_GET['username'] ?? '';
+$uri = $_SERVER['REQUEST_URI'];
+$username = '';
+
+if (preg_match('/user\/(.*?)\.json/', $uri, $matches)) {
+    $username = $matches[1];
+} 
+
+if (empty($username)) {
+    $username = $_GET['username'] ?? $_POST['username'] ?? '';
+}
+
+$inputJSON = file_get_contents('php://input');
+$input = json_decode($inputJSON, true);
+
+$action = "login"; 
+if ($_SERVER['REQUEST_METHOD'] === 'PUT' || !empty($input) || isset($_POST['jsonData'])) {
+    $action = "register";
+}
 
 // ==========================================
 // A. LOGIKA REGISTER (DARI WEB1.PUT TEXT)
 // ==========================================
 if ($action === "register") {
-    $rawJson = $_POST['jsonData'] ?? '';
-    $input = json_decode($rawJson, true);
+    if (isset($_POST['jsonData'])) {
+        $input = json_decode($_POST['jsonData'], true);
+    }
 
     $nama_lengkap = $input['namaLengkap'] ?? '';
     $email        = $input['email'] ?? '';
     $password     = $input['pass'] ?? '';
 
-    // Cek username atau email kembar
+    if (empty($username) || empty($password)) {
+        echo json_encode(["pass" => "data_kosong_x_x_x"]);
+        $conn->close();
+        exit();
+    }
+
     $stmtCheck = $conn->prepare("SELECT id FROM users WHERE username = ? OR email = ?");
     $stmtCheck->bind_param("ss", $username, $email);
     $stmtCheck->execute();
     $resCheck = $stmtCheck->get_result();
 
     if ($resCheck->num_rows > 0) {
-        // Balasan teks acak agar validasi password di Kodular gagal (User/Email sudah ada)
         echo json_encode(["pass" => "data_sudah_terdaftar_x_x_x"]);
         $stmtCheck->close();
         $conn->close();
@@ -46,13 +71,11 @@ if ($action === "register") {
     }
     $stmtCheck->close();
 
-    // Simpan teks biasa (Plaintext) tanpa hash
     $stmtInsert = $conn->prepare("INSERT INTO users (nama_lengkap, email, username, password) VALUES (?, ?, ?, ?)");
     $stmtInsert->bind_param("ssss", $nama_lengkap, $email, $username, $password);
 
     if ($stmtInsert->execute()) {
-        // Mengembalikan status sukses untuk dibaca oleh GAS
-        echo json_encode(["status" => "sukses"]);
+        echo json_encode(["status" => "sukses", "message" => "berhasil"]);
     } else {
         echo json_encode(["pass" => "gagal_simpan_database"]);
     }
@@ -71,7 +94,6 @@ if ($action === "login") {
     if ($result->num_rows > 0) {
         $row = $result->fetch_assoc();
         
-        // Kembalikan objek JSON dengan key pass plaintext untuk dicocokkan di Kodular
         $response = [
             "id" => $row['id'],
             "namaLengkap" => $row['nama_lengkap'],
