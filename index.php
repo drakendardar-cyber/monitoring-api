@@ -1,99 +1,18 @@
 <?php
-header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: POST, GET, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type");
+include 'koneksi.php';
+// index.php - Entry point for the application
+// Route requests to the appropriate PHP file
 
-$host = getenv('MYSQLHOST') ?: 'localhost';
-$user = getenv('MYSQLUSER') ?: 'root';
-$pass = getenv('MYSQLPASSWORD') ?: '';
-$db   = getenv('MYSQLDATABASE') ?: '';
-$port = getenv('MYSQLPORT') ?: '3306';
+$request = $_SERVER['REQUEST_URI'];
+$path = parse_url($request, PHP_URL_PATH);
 
-$conn = new mysqli($host, $user, $pass, $db, $port);
-
-if ($conn->connect_error) {
-    die(json_encode(["pass" => "koneksi_db_gagal"]));
+switch ($path) {
+    case '/daftar':
+    case '/daftar.php':
+        require 'daftar.php';
+        break;
+    default:
+        echo "API is running.";
+        break;
 }
-
-$action   = $_POST['action'] ?? 'login';
-$rawQuery = $_POST['rawQuery'] ?? '';
-$username = '';
-
-if (!empty($rawQuery)) {
-    $decodedQuery = urldecode($rawQuery);
-    if (preg_match('/user\/(.*?)\.json/', $decodedQuery, $matches)) {
-        $username = $matches[1];
-    }
-}
-
-// ==========================================
-// A. LOGIKA REGISTER
-// ==========================================
-if ($action === "register") {
-    $rawJson = $_POST['jsonData'] ?? '';
-    $input = json_decode($rawJson, true);
-
-    $nama_lengkap = $input['namaLengkap'] ?? '';
-    $email        = $input['email'] ?? '';
-    $password     = $input['pass'] ?? '';
-
-    if (empty($username) || empty($password)) {
-        echo json_encode(["pass" => "username_atau_password_kosong"]);
-        $conn->close();
-        exit();
-    }
-
-    $stmtCheck = $conn->prepare("SELECT id FROM users WHERE username = ? OR email = ?");
-    $stmtCheck->bind_param("ss", $username, $email);
-    $stmtCheck->execute();
-    $resCheck = $stmtCheck->get_result();
-
-    if ($resCheck->num_rows > 0) {
-        // Balasan jika user sudah terdaftar agar validasi Kodular gagal
-        echo json_encode(["pass" => "data_sudah_terdaftar_x_x_x"]);
-        $stmtCheck->close();
-        $conn->close();
-        exit();
-    }
-    $stmtCheck->close();
-
-    $stmtInsert = $conn->prepare("INSERT INTO users (nama_lengkap, email, username, password) VALUES (?, ?, ?, ?)");
-    $stmtInsert->bind_param("ssss", $nama_lengkap, $email, $username, $password);
-
-    if ($stmtInsert->execute()) {
-        // 🌟 KUNCI SUKSES KODULAR: Mengembalikan objek persis seperti Firebase tiruan lu saat sukses
-        echo json_encode([
-            "namaLengkap" => $nama_lengkap,
-            "email" => $email,
-            "pass" => $password
-        ]);
-    } else {
-        echo json_encode(["pass" => "gagal_simpan_database"]);
-    }
-    $stmtInsert->close();
-}
-
-// ==========================================
-// B. LOGIKA LOGIN
-// ==========================================
-if ($action === "login") {
-    $stmt = $conn->prepare("SELECT id, nama_lengkap, email, password FROM users WHERE username = ?");
-    $stmt->bind_param("s", $username);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    
-    if ($result->num_rows > 0) {
-        $row = $result->fetch_assoc();
-        echo json_encode([
-            "id" => $row['id'],
-            "namaLengkap" => $row['nama_lengkap'],
-            "email" => $row['email'],
-            "pass" => $row['password'] 
-        ]);
-    } else {
-        echo json_encode(["pass" => "user_tidak_ditemukan_x_x_x"]);
-    }
-    $stmt->close();
-}
-$conn->close();
 ?>
