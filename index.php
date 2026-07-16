@@ -26,6 +26,9 @@ if (!empty($rawQuery)) {
     }
 }
 
+// ==========================================
+// A. LOGIKA REGISTER
+// ==========================================
 if ($action === "register") {
     $rawJson = $_POST['jsonData'] ?? '';
     $input = json_decode($rawJson, true);
@@ -34,26 +37,45 @@ if ($action === "register") {
     $email        = $input['email'] ?? '';
     $password     = $input['pass'] ?? '';
 
+    if (empty($username) || empty($password)) {
+        echo json_encode(["pass" => "username_atau_password_kosong"]);
+        $conn->close();
+        exit();
+    }
+
     $stmtCheck = $conn->prepare("SELECT id FROM users WHERE username = ? OR email = ?");
     $stmtCheck->bind_param("ss", $username, $email);
     $stmtCheck->execute();
     $resCheck = $stmtCheck->get_result();
 
     if ($resCheck->num_rows > 0) {
+        // Balasan jika user sudah terdaftar agar validasi Kodular gagal
         echo json_encode(["pass" => "data_sudah_terdaftar_x_x_x"]);
+        $stmtCheck->close();
+        $conn->close();
         exit();
     }
+    $stmtCheck->close();
 
     $stmtInsert = $conn->prepare("INSERT INTO users (nama_lengkap, email, username, password) VALUES (?, ?, ?, ?)");
     $stmtInsert->bind_param("ssss", $nama_lengkap, $email, $username, $password);
 
     if ($stmtInsert->execute()) {
-        echo json_encode(["status" => "sukses"]);
+        // 🌟 KUNCI SUKSES KODULAR: Mengembalikan objek persis seperti Firebase tiruan lu saat sukses
+        echo json_encode([
+            "namaLengkap" => $nama_lengkap,
+            "email" => $email,
+            "pass" => $password
+        ]);
     } else {
         echo json_encode(["pass" => "gagal_simpan_database"]);
     }
+    $stmtInsert->close();
 }
 
+// ==========================================
+// B. LOGIKA LOGIN
+// ==========================================
 if ($action === "login") {
     $stmt = $conn->prepare("SELECT id, nama_lengkap, email, password FROM users WHERE username = ?");
     $stmt->bind_param("s", $username);
@@ -71,6 +93,7 @@ if ($action === "login") {
     } else {
         echo json_encode(["pass" => "user_tidak_ditemukan_x_x_x"]);
     }
+    $stmt->close();
 }
 $conn->close();
 ?>
